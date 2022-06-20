@@ -11,8 +11,7 @@ namespace PowerServiceReports
 {
     public class PowerServiceReports
     {
-        private static string path = AppDomain.CurrentDomain.BaseDirectory + @"/Config/Config.xml";
-        private static bool existsFile = true;
+        private static string path = Path.Combine(Environment.CurrentDirectory, "Config\\Config.xml");
         private static string folderPath;
         private static int? interval;
         private static Timer timer;
@@ -45,6 +44,10 @@ namespace PowerServiceReports
                     Console.WriteLine("Too many falied attempts. Interrupting execution.");
                     return;
                 }
+
+                Console.WriteLine("Configuration values:");
+                Console.WriteLine($"Folder path: {folderPath}");
+                Console.WriteLine($"Time interval: {interval.Value}");
 
                 GetPowerTradeVolume();  //First execution
 
@@ -175,16 +178,16 @@ namespace PowerServiceReports
             try
             {
                 Console.WriteLine("Folder path: ");
-                folderPath = Console.ReadLine();
+                string folderPathTemp = Console.ReadLine();
 
                 int inputTries = 0;
-                while (!existsFile && inputTries < 3)
+                while (!File.Exists(path) && inputTries < 3)
                 {
-                    if (string.IsNullOrEmpty(folderPath) || string.IsNullOrWhiteSpace(folderPath))
+                    if (string.IsNullOrEmpty(folderPathTemp) || string.IsNullOrWhiteSpace(folderPathTemp))
                     {
-                        Console.WriteLine("Value can't be null.");
+                        Console.WriteLine("Configuration file missing. Value can't be null.");
                         Console.WriteLine("Folder path: ");
-                        folderPath = Console.ReadLine();
+                        folderPathTemp = Console.ReadLine();
 
                         inputTries++;
                     }
@@ -193,16 +196,16 @@ namespace PowerServiceReports
                 }
 
                 Console.WriteLine("Time interval: ");
-                interval = null;
+                int? intervalTemp = null;
                 if (int.TryParse(Console.ReadLine(), out int intValue))
-                    interval = intValue;
+                    intervalTemp = intValue;
 
                 inputTries = 0;
-                while (!existsFile && inputTries < 3)
+                while (!File.Exists(path) && inputTries < 3)
                 {
-                    if (!interval.HasValue)
+                    if (!intervalTemp.HasValue)
                     {
-                        Console.WriteLine("Value can't be null.");
+                        Console.WriteLine("Configuration file missing. Value can't be null.");
                         Console.WriteLine("Time interval: ");
 
                         if (!int.TryParse(Console.ReadLine(), out intValue))
@@ -214,16 +217,22 @@ namespace PowerServiceReports
                         inputTries = 4;
                 }
 
-                if (!existsFile)
+                if (!File.Exists(path))
                 {
-                    CreateXmlConfig(folderPath, interval);
+                    CreateXmlConfig(folderPathTemp, intervalTemp);
                 }
-                else if (interval.HasValue || !string.IsNullOrEmpty(folderPath) || !string.IsNullOrWhiteSpace(folderPath))
+                else if (intervalTemp.HasValue || !string.IsNullOrEmpty(folderPathTemp) || !string.IsNullOrWhiteSpace(folderPathTemp))
                 {
                     Console.WriteLine("New configuration values:");
-                    Console.WriteLine(!string.IsNullOrEmpty(folderPath) || !string.IsNullOrWhiteSpace(folderPath) ? $"Folder path: {folderPath}" : string.Empty);
-                    Console.WriteLine(interval.HasValue ? $"Time interval: {interval.Value}" : string.Empty);
+                    Console.WriteLine(!string.IsNullOrEmpty(folderPathTemp) || !string.IsNullOrWhiteSpace(folderPathTemp) ? $"Folder path: {folderPathTemp}" : string.Empty);
+                    Console.WriteLine(intervalTemp.HasValue ? $"Time interval: {intervalTemp.Value}" : string.Empty);
                     Console.WriteLine("Would you like to update the configuration file with the new values? Yes (Y) / No (N)");
+
+                    LoadXmlConfig();
+                    if (!string.IsNullOrEmpty(folderPathTemp) || !string.IsNullOrWhiteSpace(folderPathTemp))
+                        folderPath = folderPathTemp;
+                    if (intervalTemp.HasValue)
+                        interval = intervalTemp;
 
                     string answer = Console.ReadLine().ToUpper();
                     if (answer == "Y" || answer == "YES")
@@ -244,8 +253,6 @@ namespace PowerServiceReports
                 {
                     Console.WriteLine("The configuration file is missing. Please input the folder path for storing the CSV file and " +
                                       "scheduled time interval in munites. Configuration file will be created from your input.");
-
-                    existsFile = false;
 
                     ReadConfigInput();
                     return;
@@ -275,10 +282,6 @@ namespace PowerServiceReports
                     else if (node.Name.ToUpper().Equals("INTERVAL"))
                         interval = Convert.ToInt32(node.InnerText);
                 }
-
-                Console.WriteLine("Configuration values:");
-                Console.WriteLine($"Folder path: {folderPath}");
-                Console.WriteLine($"Time interval: {interval.Value}");
             }
             catch (Exception e)
             {
@@ -323,7 +326,7 @@ namespace PowerServiceReports
                 XmlWriterSettings settings = new XmlWriterSettings();
                 settings.Indent = true;
                 // Save the document to a file and auto-indent the output.
-                XmlWriter writer = XmlWriter.Create(AppDomain.CurrentDomain.BaseDirectory + @"/Config.xml", settings);
+                XmlWriter writer = XmlWriter.Create(Path.Combine(Environment.CurrentDirectory, "Config\\Config.xml"), settings);
                 doc.Save(writer);
             }
             catch (Exception e)
