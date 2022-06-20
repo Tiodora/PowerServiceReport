@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-    <path>"C:\Users\Tiodora\Desktop\PowerServiceReports\Export"</path> <!-- The folder path for storing the CSV file -->
-	<interval>5</interval> <!-- scheduled time interval in munites -->
-</configuration>
