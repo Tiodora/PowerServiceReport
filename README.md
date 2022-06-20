@@ -1,7 +1,5 @@
 # PowerServiceReport
 The power traders require an intra-day report to give them their day ahead power position. This application generates a report with the aggregated volume per hour to a CSV file based upon a configurable schedule.
-## Installation
-The program is self-contained so there is no need to install anything, just decompress Release.7z and run MartianRobots.exe 
 
 ## Options
 1. Load configuration file.
