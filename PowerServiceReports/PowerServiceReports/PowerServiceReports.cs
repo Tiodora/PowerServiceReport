@@ -6,20 +6,29 @@ using Timer = System.Timers.Timer;
 using System.Text;
 using static Axpo.PowerService;
 using Axpo;
+using Serilog.Core;
+using Serilog;
+using Serilog.Events;
 
 namespace PowerServiceReports
 {
     public class PowerServiceReports
     {
-        private static string path = Path.Combine(Environment.CurrentDirectory, "Config\\Config.xml");
-        private static string folderPath;
-        private static int? interval;
+        private static string path = Path.Combine(Environment.CurrentDirectory, "Config.xml");
+        private static PowerServiceReportsConfig config;
         private static Timer timer;
+        private static Logger Logger;
 
         public static void Main(string[] args)
         {
             try
             {
+                Logger = new LoggerConfiguration()
+                  .MinimumLevel.Debug()
+                  .WriteTo.File(Environment.CurrentDirectory + "\\Logs\\log.log", LogEventLevel.Verbose, "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level}] {Message}{NewLine}{Exception}")  // log file.
+                  .WriteTo.Console(restrictedToMinimumLevel: LogEventLevel.Error)
+                  .CreateLogger();
+
                 Console.WriteLine("1. Load configuration file.");
                 Console.WriteLine("2. Input folder path for storing the CSV file and/or scheduled time interval in munites.");
                 Console.WriteLine("3. Exit.");
@@ -46,8 +55,9 @@ namespace PowerServiceReports
                 }
 
                 Console.WriteLine("Configuration values:");
-                Console.WriteLine($"Folder path: {folderPath}");
-                Console.WriteLine($"Time interval: {interval.Value}");
+                Console.WriteLine($"Folder path: {config.folderPath}");
+                Console.WriteLine($"Time interval: {config.interval.Value}");
+                Logger.Information($"Configuration values: Folder path - [{config.folderPath}] Time interval - [{config.interval.Value}]");
 
                 GetPowerTradeVolume();  //First execution
 
@@ -57,10 +67,12 @@ namespace PowerServiceReports
 
                 timer.Stop();
                 timer.Dispose();
+                Logger.Information("Terminating the application...");
                 Console.WriteLine("Terminating the application...");
             }
             catch (Exception e)
             {
+                Logger.Error($"Error during the execution: {e}");
                 Console.WriteLine($"Error during the execution: {e}");
             }
         }
@@ -72,10 +84,9 @@ namespace PowerServiceReports
             {
                 IPowerService powerSerice = new Axpo.PowerService();
                 DateTime dateTime = DateTime.Now;
-                List<PowerTrade> trades = powerSerice.GetTrades(dateTime).ToList();
-                Dictionary<string, double> tradesAggregate = new Dictionary<string, double>();
+                config.trades = powerSerice.GetTrades(dateTime).ToList();
 
-                foreach (PowerTrade trade in trades)    //loop through all the trades provided
+                foreach (PowerTrade trade in config.trades)    //loop through all the trades provided
                 {
                     int period = 23;
                     foreach (PowerPeriod powerPeriod in trade.Periods)  //loop through each period
@@ -83,28 +94,29 @@ namespace PowerServiceReports
                         TimeSpan hour = TimeSpan.FromHours(period);
                         string localTime = hour.ToString("hh':'mm");
                         double volume = powerPeriod.Volume;
-                        if (!tradesAggregate.ContainsKey(localTime))    //add to dictionary if period doesn't exist
-                            tradesAggregate[localTime] = 0;
-                        tradesAggregate[localTime] += volume;
+                        if (!config.tradesAggregate.ContainsKey(localTime))    //add to dictionary if period doesn't exist
+                            config.tradesAggregate[localTime] = 0;
+                        config.tradesAggregate[localTime] += volume;
                         period++;
                     }
                 }
 
                 string name = $"PowerPosition_{dateTime.ToString("yyyyMMdd")}_{dateTime.ToString("HHmm")}.csv";
-                string file = Path.Combine(folderPath, name);
+                string file = Path.Combine(config.folderPath, name);
 
                 if (!File.Exists(file))
                     File.Delete(file);
 
-                CreateCsv(file, tradesAggregate);
+                CreateCsv(file);
             }
             catch (Exception e)
             {
+                Logger.Error($"Error processing power trade values. {e}");
                 Console.WriteLine($"Error processing power trade values. {e}");
             }
         }
 
-        private static void CreateCsv(string file, Dictionary<string, double> tradesAggregate)
+        private static void CreateCsv(string file)
         {
             try
             {
@@ -113,21 +125,23 @@ namespace PowerServiceReports
                 string header = "Local Time;Volume";
                 csv.AppendLine(header);
 
-                foreach (KeyValuePair<string, double> line in tradesAggregate)
+                foreach (KeyValuePair<string, double> line in config.tradesAggregate)
                     csv.AppendLine($"{line.Key};{line.Value}");
 
                 File.WriteAllText(file, csv.ToString());
+                Logger.Information($"File {Path.GetFileName(file)} creted!");
                 Console.WriteLine($"File {Path.GetFileName(file)} creted!");
             }
             catch (Exception e)
             {
+                Logger.Error($"Error creating csv file. {e}");
                 Console.WriteLine($"Error creating csv file. {e}");
             }
         }
 
         private static void SetInterval()
         {
-            double intervalms = interval.Value * 60000; //Convert interval to milliseconds
+            double intervalms = config.interval.Value * 60000; //Convert interval to milliseconds
             timer = new Timer(intervalms);
             timer.Elapsed += OnTimedEvent;
             timer.AutoReset = true;
@@ -159,6 +173,7 @@ namespace PowerServiceReports
                         break;
                     case 0:
                     default:
+                        Logger.Warning($"Invalid input option: {option}");
                         Console.WriteLine("Invalid option");
                         tries++;
                         break;
@@ -168,6 +183,7 @@ namespace PowerServiceReports
             }
             catch (Exception e)
             {
+                Logger.Error($"Error processing selected option. {e}");
                 Console.WriteLine($"Error processing selected option. {e}");
                 return 3;
             }
@@ -177,17 +193,19 @@ namespace PowerServiceReports
         {
             try
             {
+                PowerServiceReportsConfig auxconfig = new PowerServiceReportsConfig();
                 Console.WriteLine("Folder path: ");
-                string folderPathTemp = Console.ReadLine();
+                auxconfig.folderPath = Console.ReadLine();
 
                 int inputTries = 0;
                 while (!File.Exists(path) && inputTries < 3)
                 {
-                    if (string.IsNullOrEmpty(folderPathTemp) || string.IsNullOrWhiteSpace(folderPathTemp))
+                    if (string.IsNullOrEmpty(auxconfig.folderPath) || string.IsNullOrWhiteSpace(auxconfig.folderPath))
                     {
+                        Logger.Warning("Configuration file missing. Value can't be null.");
                         Console.WriteLine("Configuration file missing. Value can't be null.");
                         Console.WriteLine("Folder path: ");
-                        folderPathTemp = Console.ReadLine();
+                        auxconfig.folderPath = Console.ReadLine();
 
                         inputTries++;
                     }
@@ -195,21 +213,29 @@ namespace PowerServiceReports
                         inputTries = 4;
                 }
 
+                if (inputTries == 3) //3 opportunities to select the desired option
+                {
+                    Logger.Error("Too many falied attempts. Interrupting execution.");
+                    Console.WriteLine("Too many falied attempts. Interrupting execution.");
+                    return;
+                }
+
                 Console.WriteLine("Time interval: ");
-                int? intervalTemp = null;
+                auxconfig.interval = null;
                 if (int.TryParse(Console.ReadLine(), out int intValue))
-                    intervalTemp = intValue;
+                    auxconfig.interval = intValue;
 
                 inputTries = 0;
                 while (!File.Exists(path) && inputTries < 3)
                 {
-                    if (!intervalTemp.HasValue)
+                    if (!auxconfig.interval.HasValue)
                     {
+                        Logger.Error("Configuration file missing. Value can't be null.");
                         Console.WriteLine("Configuration file missing. Value can't be null.");
                         Console.WriteLine("Time interval: ");
 
                         if (!int.TryParse(Console.ReadLine(), out intValue))
-                            interval = intValue;
+                            auxconfig.interval = intValue;
 
                         inputTries++;
                     }
@@ -217,31 +243,40 @@ namespace PowerServiceReports
                         inputTries = 4;
                 }
 
+                if (inputTries == 3) //3 opportunities to select the desired option
+                {
+                    Logger.Error("Too many falied attempts. Interrupting execution.");
+                    Console.WriteLine("Too many falied attempts. Interrupting execution.");
+                    return;
+                }
+
                 if (!File.Exists(path))
                 {
-                    CreateXmlConfig(folderPathTemp, intervalTemp);
+                    config.folderPath = auxconfig.folderPath;
+                    config.interval = auxconfig.interval.Value;
+                    XmlParser.CreateConfigFile(Logger, path, config);
                 }
-                else if (intervalTemp.HasValue || !string.IsNullOrEmpty(folderPathTemp) || !string.IsNullOrWhiteSpace(folderPathTemp))
+                else if (auxconfig.interval.HasValue || !string.IsNullOrEmpty(auxconfig.folderPath) || !string.IsNullOrWhiteSpace(auxconfig.folderPath))
                 {
                     Console.WriteLine("New configuration values:");
-                    Console.WriteLine(!string.IsNullOrEmpty(folderPathTemp) || !string.IsNullOrWhiteSpace(folderPathTemp) ? $"Folder path: {folderPathTemp}" : string.Empty);
-                    Console.WriteLine(intervalTemp.HasValue ? $"Time interval: {intervalTemp.Value}" : string.Empty);
+                    Console.WriteLine(!string.IsNullOrEmpty(auxconfig.folderPath) || !string.IsNullOrWhiteSpace(auxconfig.folderPath) ? $"Folder path: {auxconfig.folderPath}" : string.Empty);
+                    Console.WriteLine(auxconfig.interval.HasValue ? $"Time interval: {auxconfig.interval.Value}" : string.Empty);
                     Console.WriteLine("Would you like to update the configuration file with the new values? Yes (Y) / No (N)");
 
-                    LoadXmlConfig();
-                    if (!string.IsNullOrEmpty(folderPathTemp) || !string.IsNullOrWhiteSpace(folderPathTemp))
-                        folderPath = folderPathTemp;
-                    if (intervalTemp.HasValue)
-                        interval = intervalTemp;
+                    config = XmlParser.LoadConfigFile(Logger, path);
+                    if (!string.IsNullOrEmpty(auxconfig.folderPath) || !string.IsNullOrWhiteSpace(auxconfig.folderPath))
+                        config.folderPath = auxconfig.folderPath;
+                    if (config.interval.HasValue)
+                        config.interval = auxconfig.interval;
 
                     string answer = Console.ReadLine().ToUpper();
                     if (answer == "Y" || answer == "YES")
-                        UpdateXmlConfig();
+                        XmlParser.UpdateConfigFile(Logger, config, path);
                 }
             }
             catch (Exception e)
             {
-                Console.WriteLine($"Error reading configuration values from command line. {e}");
+                Logger.Error($"An error ocurred reading configuration values from command line. {e}");
             }
         }
 
@@ -249,89 +284,16 @@ namespace PowerServiceReports
         {
             try
             {
-                if (!File.Exists(path))
+                config = XmlParser.LoadConfigFile(Logger, path);
+                if (config == null)
                 {
-                    Console.WriteLine("The configuration file is missing. Please input the folder path for storing the CSV file and " +
-                                      "scheduled time interval in munites. Configuration file will be created from your input.");
-
+                    config = new PowerServiceReportsConfig();
                     ReadConfigInput();
-                    return;
-                }
-
-                LoadXmlConfig();
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Error loading configuration from config.xml file. {e}");
-            }
-        }
-        #endregion
-
-        #region XML Operations
-        private static void LoadXmlConfig()
-        {
-            try
-            {
-                XmlDocument doc = new XmlDocument();
-                doc.Load(path);
-
-                foreach (XmlNode node in doc["configuration"].ChildNodes)   //loop thhrough all the nodes in the config.xml file
-                {
-                    if (node.Name.ToUpper().Equals("PATH"))
-                        folderPath = node.InnerText;
-                    else if (node.Name.ToUpper().Equals("INTERVAL"))
-                        interval = Convert.ToInt32(node.InnerText);
                 }
             }
             catch (Exception e)
             {
-                Console.WriteLine($"Error opening file config.xml. {e}");
-            }
-        }
-
-        private static void UpdateXmlConfig()
-        {
-            try
-            {
-                XmlDocument doc = new XmlDocument();
-                doc.Load(path);
-
-                foreach (XmlNode node in doc["configuration"].ChildNodes)
-                {
-                    if (node.Name.ToUpper().Equals("PATH") && (!string.IsNullOrEmpty(folderPath) || !string.IsNullOrWhiteSpace(folderPath)))
-                        node.InnerText = folderPath;
-                    else if (node.Name.ToUpper().Equals("INTERVAL") && interval.HasValue)
-                        node.InnerText = interval.ToString();
-                }
-
-                doc.Save(path);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Error updating the configuration file. {e}");
-            }
-        }
-
-        private static void CreateXmlConfig(string? folderPath, int? interval)
-        {
-            try
-            {
-                XmlDocument doc = new XmlDocument();
-                doc.LoadXml($"<configuration>" +
-                            $"<path>{folderPath}</path>" +
-                            $"<interval>{interval}</interval>" +
-                            $"</configuration>");
-
-
-                XmlWriterSettings settings = new XmlWriterSettings();
-                settings.Indent = true;
-                // Save the document to a file and auto-indent the output.
-                XmlWriter writer = XmlWriter.Create(Path.Combine(Environment.CurrentDirectory, "Config\\Config.xml"), settings);
-                doc.Save(writer);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Error creating the configuration file. {e}");
+                Logger.Error($"An error ocurred while loading the configuration. {e}");
             }
         }
         #endregion

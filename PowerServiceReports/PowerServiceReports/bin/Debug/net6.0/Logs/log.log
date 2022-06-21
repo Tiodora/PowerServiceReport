@@ -1,0 +1,8 @@
+2022-06-21 11:21:35.402 [Warning] [PowerServiceReports] The configuration file is missing.
+2022-06-21 11:28:51.816 [Error] An error ocurred while loading the configuration. System.FormatException: Input string was not in a correct format.
+   at System.Number.ThrowOverflowOrFormatException(ParsingStatus status, TypeCode type)
+   at System.Int32.Parse(String s)
+   at PowerServiceReports.XmlParser.LoadConfigFile(Logger Logger, String path) in C:\Users\Tiodora\source\repos\PowerServiceReports\PowerServiceReports\XmlParser.cs:line 35
+2022-06-21 11:34:10.943 [Information] Configuration values: Folder path - [C:\Users\Tiodora\Desktop\PowerServiceReports\Export] Time interval - [4]
+2022-06-21 11:34:36.247 [Information] File PowerPosition_20220621_1134.csv creted!
+2022-06-21 11:34:42.393 [Information] Terminating the application...
